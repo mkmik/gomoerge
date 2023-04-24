@@ -2,38 +2,45 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
 
-	"github.com/google/renameio"
+	"github.com/google/renameio/v2"
 )
 
 func mainE() error {
-	goModFilename := "go.mod"
+	for _, filename := range []string{"go.mod", "go.sum"} {
+		fmt.Printf("Parsing %s... ", filename)
 
-	b, err := ioutil.ReadFile(goModFilename)
-	if err != nil {
-		return err
-	}
-
-	w, err := renameio.TempFile("", goModFilename)
-	if err != nil {
-		return err
-	}
-	defer w.Cleanup()
-
-	lines := strings.Split(string(b), "\n")
-	for _, l := range lines {
-		if strings.HasPrefix(l, "<<<<<<<") || strings.HasPrefix(l, ">>>>>>>") || strings.HasPrefix(l, "=======") {
-			continue
+		b, err := os.ReadFile(filename)
+		if err != nil {
+			return err
 		}
-		fmt.Fprintf(w, "%s\n", l)
-	}
 
-	if err := w.CloseAtomicallyReplace(); err != nil {
-		return fmt.Errorf("error while trying to overwrite %q: %w", goModFilename, err)
+		w, err := renameio.TempFile("", filename)
+		if err != nil {
+			return err
+		}
+		defer w.Cleanup()
+
+		lines := strings.Split(string(b), "\n")
+		found := 0
+		for _, l := range lines {
+			if strings.HasPrefix(l, "<<<<<<<") {
+				found++
+				continue
+			}
+			if strings.HasPrefix(l, ">>>>>>>") || strings.HasPrefix(l, "=======") {
+				continue
+			}
+			fmt.Fprintf(w, "%s\n", l)
+		}
+
+		if err := w.CloseAtomicallyReplace(); err != nil {
+			return fmt.Errorf("error while trying to overwrite %q: %w", filename, err)
+		}
+		fmt.Printf("%d conflicts found\n", found)
 	}
 
 	cmd := exec.Command("go", "mod", "tidy")
